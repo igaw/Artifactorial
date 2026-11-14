@@ -29,6 +29,7 @@ from django.http import (
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 from Artifactorial.models import Artifact, AuthToken, Directory, Share
 
@@ -37,6 +38,24 @@ class ArtifactForm(ModelForm):
     class Meta:
         model = Artifact
         fields = ("path", "directory", "is_permanent")
+
+
+def _serve(artifact):
+    """Stream an artifact's file back to the client.
+
+    Artifacts are untrusted uploads served from the application's own origin.
+    The CSP sandbox lets the browser display them (images, text, PDFs, even
+    HTML) but never run their scripts with the viewer's session.
+    """
+    mime = mimetypes.guess_type(artifact.path.name)
+    artifact_file = open(artifact.path.path, "rb")  # noqa: SIM115
+    response = FileResponse(
+        artifact_file, content_type=mime[0] if mime[0] else "text/plain"
+    )
+    response["Content-Length"] = artifact.path.size
+    response["Content-Security-Policy"] = "sandbox"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def home(request):
@@ -98,9 +117,11 @@ def _get(request, filename):
         art_list = []
         in_real_directory = False
 
-        # List real directories
+        # List real directories: dirname itself and the ones below it. Match on
+        # "dirname/" so a sibling like /homework isn't listed under /home.
+        subdir_prefix = dirname if dirname == "/" else dirname + "/"
         directories = Directory.objects.filter(
-            Q(path__startswith=f"{dirname}") | Q(path=dirname)
+            Q(path__startswith=subdir_prefix) | Q(path=dirname)
         )
         directories = directories.select_related("user", "group")
         for directory in directories:
@@ -179,16 +200,7 @@ def _get(request, filename):
         artifact = get_object_or_404(Artifact, path=filename.lstrip("/"))
         if not artifact.is_visible_to(user):
             return HttpResponseForbidden()
-
-        # Guess the mimetype
-        mime = mimetypes.guess_type(artifact.path.name)
-        artifact_file = open(artifact.path.path, "rb")  # noqa: SIM115
-        response = FileResponse(
-            artifact_file, content_type=mime[0] if mime[0] else "text/plain"
-        )
-
-        response["Content-Length"] = artifact.path.size
-        return response
+        return _serve(artifact)
 
 
 def _head(request, filename):
@@ -315,17 +327,7 @@ def shares_root(request):
 def shares(request, token):
     if request.method == "GET":
         share = get_object_or_404(Share, token=token)
-        artifact = share.artifact
-
-        # Guess the mimetype
-        mime = mimetypes.guess_type(artifact.path.name)
-        artifact_file = open(artifact.path.path, "rb")  # noqa: SIM115
-        response = FileResponse(
-            artifact_file, content_type=mime[0] if mime[0] else "text/plain"
-        )
-
-        response["Content-Length"] = artifact.path.size
-        return response
+        return _serve(share.artifact)
 
     elif request.method == "DELETE":
         # Get the current user
@@ -357,6 +359,7 @@ def tokens(request):
 
 
 @login_required
+@require_POST
 def tokens_delete(request, id):
     get_object_or_404(AuthToken, user=request.user, id=id).delete()
     return HttpResponseRedirect(reverse("tokens.index"))

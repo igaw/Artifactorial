@@ -13,6 +13,7 @@ import re
 
 import pytest
 from django.contrib.auth.models import Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from Artifactorial.models import Artifact, AuthToken, Directory, Share
@@ -323,12 +324,12 @@ class TestTokens:
         )
 
     def test_failing_delete(self, client, users):
-        response = client.get(reverse("tokens.delete", args=["0"]))
+        response = client.post(reverse("tokens.delete", args=["0"]))
         assert response.status_code == 302
         assert response["location"] == "/accounts/login/?next=/tokens/0/delete/"
 
         assert client.login(username=users["u"][0], password="123456")
-        response = client.get(reverse("tokens.delete", args=["0"]))
+        response = client.post(reverse("tokens.delete", args=["0"]))
         assert response.status_code == 404
 
     def test_delete(self, client, users):
@@ -337,23 +338,23 @@ class TestTokens:
         t3 = AuthToken.objects.create(user=users["u"][2])
         t4 = AuthToken.objects.create(user=users["u"][0], description="Hello")
 
-        response = client.get(reverse("tokens.delete", args=["0"]))
+        response = client.post(reverse("tokens.delete", args=["0"]))
         assert response.status_code == 302
         assert response["location"] == "/accounts/login/?next=/tokens/0/delete/"
 
         assert client.login(username=users["u"][0], password="123456")
-        response = client.get(reverse("tokens.delete", args=[t1.id]))
+        response = client.post(reverse("tokens.delete", args=[t1.id]))
         assert response.status_code == 302
         assert response["location"] == reverse("tokens.index")
         assert AuthToken.objects.get(user=users["u"][0]) == t4
 
         # Forbidden to remove other users token
-        response = client.get(reverse("tokens.delete", args=[t2.id]))
+        response = client.post(reverse("tokens.delete", args=[t2.id]))
         assert response.status_code == 404
 
         # Remove the last one we have
         assert client.login(username=users["u"][0], password="123456")
-        response = client.get(reverse("tokens.delete", args=[t4.id]))
+        response = client.post(reverse("tokens.delete", args=[t4.id]))
         assert response.status_code == 302
         assert response["location"] == reverse("tokens.index")
         assert len(AuthToken.objects.filter(user=users["u"][0])) == 0
@@ -903,3 +904,61 @@ class TestVersion:
             f"https://github.com/igaw/Artifactorial/releases/tag/v{__version__}"
             in content
         )
+
+
+class TestSecurityFixes:
+    """Regressions for the issues fixed in 0.6.1."""
+
+    def _upload_html(self, client, settings, tmpdir):
+        settings.MEDIA_ROOT = str(tmpdir.mkdir("media"))
+        Directory.objects.create(path="/pub")  # anonymous: writable to all
+        upload = SimpleUploadedFile("x.html", b"<script>alert(1)</script>")
+        response = client.post(
+            reverse("artifacts", args=["pub/"]),
+            {"path": upload, "is_permanent": "1"},
+        )
+        assert response.status_code == 200
+        return Artifact.objects.get(path="pub/x.html")
+
+    def test_artifact_download_is_sandboxed(self, client, settings, tmpdir, users):
+        # The dangerous case: anonymous upload, opened by a logged-in user.
+        self._upload_html(client, settings, tmpdir)
+        assert client.login(username="user1", password="123456")
+        response = client.get(reverse("artifacts", args=["pub/x.html"]))
+        assert response.status_code == 200
+        assert response["Content-Security-Policy"] == "sandbox"
+        assert response["X-Content-Type-Options"] == "nosniff"
+
+    def test_share_download_is_sandboxed(self, client, settings, tmpdir, users):
+        artifact = self._upload_html(client, settings, tmpdir)
+        share = Share.objects.create(artifact=artifact, user=users["u"][0])
+        response = client.get(reverse("shares", args=[share.token]))
+        assert response.status_code == 200
+        assert response["Content-Security-Policy"] == "sandbox"
+        assert response["X-Content-Type-Options"] == "nosniff"
+
+    def test_listing_ignores_sibling_prefix(self, client, db):
+        Directory.objects.create(path="/home", is_public=True)
+        Directory.objects.create(path="/home/debian", is_public=True)
+        Directory.objects.create(path="/homework", is_public=True)
+        response = client.get(reverse("artifacts", args=["home/"]))
+        assert response.status_code == 200
+        assert response.context["directories"] == ["debian"]
+
+    def test_sign_out_is_a_post_form(self, client, users):
+        assert client.login(username="user1", password="123456")
+        content = client.get(reverse("home")).content.decode()
+        logout_url = reverse("accounts.logout")
+        assert f'<form method="post" action="{logout_url}"' in content
+        assert f'href="{logout_url}"' not in content
+
+        response = client.post(logout_url)
+        assert response.status_code == 200
+        assert "_auth_user_id" not in client.session
+
+    def test_token_delete_rejects_get(self, client, users):
+        token = AuthToken.objects.create(user=users["u"][0])
+        assert client.login(username="user1", password="123456")
+        response = client.get(reverse("tokens.delete", args=[token.id]))
+        assert response.status_code == 405
+        assert AuthToken.objects.filter(id=token.id).exists()

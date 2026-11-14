@@ -24,6 +24,10 @@ wait_database() {
 }
 
 
+# Fail fast on configuration errors (e.g. no SECRET_KEY) instead of looping
+# forever below; the system checks don't need the database.
+python3 manage.py check || exit 1
+
 echo "Waiting for the database"
 wait_database
 echo "done"

@@ -47,11 +47,18 @@ jobs:
           cache-from: type=gha
 
       # Loads the Django project and validates the entrypoint's gunicorn flags
-      # against the installed gunicorn, without needing a database.
+      # against the installed gunicorn, without needing a database. Also checks
+      # that no SECRET_KEY is baked in and that the app refuses to start without one.
       - name: Smoke test
         run: |
-          docker run --rm artifactorial:smoke python3 manage.py check
-          docker run --rm artifactorial:smoke gunicorn --check-config \
+          if docker run --rm artifactorial:smoke grep -rl "django-insecure" /app/website; then
+            echo "::error::a startproject SECRET_KEY is baked into the image"; exit 1
+          fi
+          if docker run --rm artifactorial:smoke python3 manage.py check; then
+            echo "::error::the app started without a SECRET_KEY"; exit 1
+          fi
+          docker run --rm -e SECRET_KEY=smoke artifactorial:smoke python3 manage.py check
+          docker run --rm -e SECRET_KEY=smoke artifactorial:smoke gunicorn --check-config \
             --bind 0.0.0.0:80 --threads 10 --workers 4 --worker-tmp-dir /dev/shm website.wsgi
 
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0

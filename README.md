@@ -85,6 +85,20 @@ links can then be shared with other users to give them access to the files.
 Managing
 ========
 
+Running with Docker
+-------------------
+
+Images are published to `ghcr.io/igaw/artifactorial` (`latest` is the newest
+release). The container requires a secret key, which must not be shared
+between deployments:
+
+    python3 -c 'import secrets; print(secrets.token_urlsafe(50))'
+
+Pass it as the `SECRET_KEY` environment variable, or as a `SECRET_KEY:` entry
+in the `/etc/artifactorial.yaml` mounted into the container. For
+`docker compose`, put `KC_SECRET_KEY=<the key>` in `.env`. The container
+refuses to start without a key.
+
 Installing
 ----------
 

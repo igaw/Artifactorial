@@ -14,7 +14,9 @@
   {% if user.is_authenticated %}
   <a href="{% url 'tokens.index' %}" class="btn btn-warning">Tokens</a>
   <a href="{% url 'accounts.profile' %}" class="btn btn-secondary">Profile</a>
-  <a href="{% url 'accounts.logout' %}" class="btn btn-light">Sign out</a>
+  <form method="post" action="{% url 'accounts.logout' %}" class="d-inline">{% csrf_token %}
+    <button type="submit" class="btn btn-light">Sign out</button>
+  </form>
   {% else %}
   <a href="{% url 'accounts.login' %}?next={% url 'home' %}" class="btn btn-light">Sign in</a>
   {% endif %}

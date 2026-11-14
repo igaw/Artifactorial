@@ -20,8 +20,11 @@ RUN python3 -m venv /opt/venv && \
 
 # Create the django project
 WORKDIR /app/
+# startproject writes a random SECRET_KEY into settings.py; drop it so no key
+# ships in the public image (website/custom_settings.py requires one at runtime)
 RUN chmod 775 /app ;\
-    django-admin startproject website /app
+    django-admin startproject website /app && \
+    sed -i '/^SECRET_KEY = /d' /app/website/settings.py
 
 # Add entrypoint
 COPY share/entrypoint.sh /entrypoint.sh
@@ -36,5 +39,5 @@ COPY share/urls.py /app/website/urls.py
 RUN echo "INSTALLED_APPS.append(\"Artifactorial\")" >> /app/website/settings.py && \
     echo "from Artifactorial.settings import *" >> /app/website/settings.py && \
     echo "from website.custom_settings import *" >> /app/website/settings.py && \
-    # Migrate and collect static files
-    python3 manage.py collectstatic --noinput
+    # Collect static files (needs some key to load settings; not kept)
+    SECRET_KEY=collectstatic-build-only python3 manage.py collectstatic --noinput

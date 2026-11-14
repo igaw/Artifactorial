@@ -3,7 +3,11 @@ import os
 import pathlib
 
 import yaml
+from django.core.exceptions import ImproperlyConfigured
 
+# Never baked into the image: set SECRET_KEY in the environment, or as a key
+# in /etc/artifactorial.yaml (which overrides the environment).
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
 DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = ["*"]
 STATIC_ROOT = "/app/static"
@@ -47,6 +51,13 @@ with contextlib.suppress(FileNotFoundError):
     data = pathlib.Path("/etc/artifactorial.yaml").read_text(encoding="utf-8")
     for k, v in yaml.safe_load(data).items():
         globals()[k] = v
+
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is not set. Generate one with "
+        "`python3 -c 'import secrets; print(secrets.token_urlsafe(50))'` and pass "
+        "it as the SECRET_KEY environment variable or in /etc/artifactorial.yaml."
+    )
 
 # Add sentry if SENTRY_DSN is defined
 if "SENTRY_DSN" in os.environ:

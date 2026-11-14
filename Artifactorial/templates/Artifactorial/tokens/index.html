@@ -48,7 +48,11 @@
           <td>{{ token.id }}</td>
           <td>{{ token.description }}</td>
           <td>{{ token.secret }}</td>
-          <td><a href="{% url 'tokens.delete' token.id %}" class="btn btn-danger btn-sm" title="delete"><i class="fas fa-trash"></i></a></td>
+          <td>
+            <form method="post" action="{% url 'tokens.delete' token.id %}">{% csrf_token %}
+              <button type="submit" class="btn btn-danger btn-sm" title="delete"><i class="fas fa-trash"></i></button>
+            </form>
+          </td>
         </tr>
         {% empty %}
         <tr>

@@ -13,6 +13,7 @@ services:
     build: .
     image: ${KC_IMAGE}
     environment:
+      SECRET_KEY: ${KC_SECRET_KEY:?set KC_SECRET_KEY (see README) in .env or the environment}
       POSTGRES_HOST: db
       POSTGRES_DB: ${KC_POSTGRES_DB}
       POSTGRES_USER: ${KC_POSTGRES_USER}
