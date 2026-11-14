@@ -10,6 +10,43 @@ this fork, https://github.com/igaw/Artifactorial.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14
+
+Security and bug-fix release. **Upgrade if you run 0.6.0 or older.**
+
+### Upgrade notes
+
+- **Docker: a `SECRET_KEY` is now required.** Earlier images contained the
+  random key that `django-admin startproject` generated at build time, so
+  every deployment of a published image shared one publicly readable key.
+  Generate your own key (see the README's "Running with Docker") and pass it
+  as `SECRET_KEY` or in `/etc/artifactorial.yaml`. With `docker compose`, set
+  `KC_SECRET_KEY` in `.env`. Changing the key logs out every user once.
+- If you run from source with your own settings, nothing changes for you
+  beyond the fixes below.
+
+### Security
+
+- Uploaded files are now served with `Content-Security-Policy: sandbox` and
+  `X-Content-Type-Options: nosniff`. Before, an uploaded HTML or SVG file
+  (for example in an anonymous directory) ran scripts in the session of
+  whoever opened it, which could read or create their API tokens, or act as
+  an admin.
+- The Docker image no longer contains a `SECRET_KEY`, and refuses to start
+  without one (see Upgrade notes).
+- Deleting a token now requires a POST with a CSRF token. Before, another
+  website could delete a logged-in user's tokens through a plain link or
+  image.
+
+### Fixed
+
+- Sign out works again. Django 5 accepts logout only as a POST, and the
+  navbar and home page used plain links, which returned 405.
+- Directory listings no longer show bogus entries from sibling directories
+  that share a name prefix (listing `/home/` showed `ork` from `/homework`).
+- The container exits with a clear error on configuration problems, instead
+  of waiting for the database forever.
+
 ### Changed
 
 - Dependencies are now pinned, including transitive ones: `requirements.in`
@@ -80,5 +117,6 @@ First release from the maintained fork, and the first since v0.5 (2017).
 - The GitLab CI configuration, which depended on infrastructure that no
   longer exists.
 
-[Unreleased]: https://github.com/igaw/Artifactorial/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/igaw/Artifactorial/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/igaw/Artifactorial/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/igaw/Artifactorial/compare/v0.5...v0.6.0
